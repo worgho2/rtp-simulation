@@ -21,11 +21,6 @@ struct pkt {
 
 /**
  * Estrutura de controle para o remetente
- * 
- * last_packet: 
- * rtt: 
- * waiting_for_ack: 
- * seqnum: 
  */
 struct a {
     struct pkt last_packet;
@@ -36,8 +31,6 @@ struct a {
 
 /**
  * Estrutura de controle para o destinatário 
- * 
- * seqnum: 
  */
 struct b {
     int seqnum;
