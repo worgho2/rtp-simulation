@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define BIDIRECTIONAL 0
 
@@ -52,7 +53,7 @@ void tolayer5(int AorB, char datasent[20]);
 
 /**
  * Atualiza o checksum do pacote, somando o seqnum, acknum e todos as posições
- * da payload
+ * da payload, sugerido pela descrição do trabalho
  */
 void update_pkt_checksum(struct pkt *packet) {
     int checksum = packet->seqnum + packet->acknum;
@@ -77,49 +78,154 @@ int is_valid_checksum(int expected_checksum, struct pkt *packet) {
     return (checksum == expected_checksum);
 }
 
+/**
+ * Envia um pacote para o layer 3 com um ACK
+ */
+void send_ACK(int AorB, int seqnum) {
+    struct pkt packet;
+    packet.acknum = seqnum;
+    update_pkt_checksum(&packet);
+    tolayer3(AorB, packet);
+}
+
+/**
+ * Envia um pacote para o layer 3 com um NAK, nesse caso o acknum será
+ * um valor negativo para podermos diferenciar
+ */
+void send_NAK(int AorB, int seqnum) {
+    struct pkt packet;
+    packet.acknum = 1 - seqnum;
+    update_pkt_checksum(&packet);
+    tolayer3(AorB, packet);
+}
+
 
 struct a A;
 struct b B;
 
+#define RTT 15.0
+
 
 void A_output(struct msg message) {
+    if (A.waiting_for_ack) {
+        printf("[A_output] Remetente aguardando ACK, regeitando mensagem (data: %s)\n", message.data);
+        return;
+    }
 
+    printf("[A_output] Enviando pacote (pkt: %d, payload: %s)\n", A.seqnum, message.data);
+
+    struct pkt packet;
+    packet.seqnum = A.seqnum;
+
+    for (int i = 0; i < 20; i++) {
+        packet.payload[i] = message.data[i];
+    }
+
+    update_pkt_checksum(&packet);
+
+    A.last_packet = packet;
+    A.waiting_for_ack = 1;
+
+    tolayer3(0, packet);
+    starttimer(0, A.rtt);
 }
 
 /**
  * Utilizada para implementação bidirecional, nessa caso não será utilizada
  */
 void B_output(struct msg message) {
-    printf(" Skipping B_output\n");
+    printf("[B_output] Pulando\n");
 }
 
 
 void A_input(struct pkt packet) {
 
+    if(packet.acknum != A.seqnum) {
+        printf("[A_input] Descartando pacote fora de ordem (pkt recebido: %d, pkt esperado: %d)\n", packet.acknum, A.seqnum);
+        return;
+    }
+
+    if (!is_valid_checksum(packet.checksum, &packet)) {
+        printf("[A_input] Descartando pacote corrompido (pkt: %d)\n", packet.seqnum);
+        return;
+    }
+
+    if (!A.waiting_for_ack) {
+        printf("[A_input] Erro: comunicação bidirecional não implementada\n");
+        return;
+    }
+
+    printf("[A_input] ACK recebido (acknum: %d)\n", packet.acknum);
+
+    stoptimer(0);
+
+    A.seqnum = 1 - A.seqnum;
+    A.waiting_for_ack = 0;
 }
 
-
+/**
+ * Executa quando o timer inicializado no envio de um pacote é estourado,
+ * então o último pacote é re-enviado.
+ */
 void A_timerinterrupt() {
+    if (!A.waiting_for_ack) {
+        printf("[A_timerinterrupt] Erro: pacote não está esperando ack (pkt: %d)\n", A.seqnum);
+        return;
+    }
 
+    printf("[A_timerinterrupt] Timeout, reenviado (pkt: %d, payload: %s)\n", A.last_packet.seqnum, A.last_packet.payload);
+
+    tolayer3(0, A.last_packet);
+    starttimer(0, A.rtt);
 }
-
 
 /**
  * Inicializa o remetente
  */
 void A_init() {
-    A.rtt = 15;
+    A.rtt = RTT;
     A.waiting_for_ack = 0;
     A.seqnum = 0;
 }
 
-
 void B_input(struct pkt packet) {
 
+    /**
+     * Se o pacote recebido não é o pacote esperado, mandar um NAK
+     * para o pacote esperado
+     */
+    if (packet.seqnum != B.seqnum) {
+        printf("[B_input] Enviando NAK, pacote fora de ordem (pkt recebido: %d, pkt esperado: %d)\n", packet.seqnum, B.seqnum);
+        send_NAK(1, B.seqnum);
+        return;
+    }
+
+    /**
+     * Se o pacote está corrompido, enviar um NAK para o pacote esperado
+     */
+    if (!is_valid_checksum(packet.checksum, &packet)) {
+        printf("[B_input] Enviando NAK, checksum incorreto (pkt: %d)\n", packet.seqnum);
+        send_NAK(1, B.seqnum);
+        return;
+    }
+
+    /**
+     * Pacote válido recebido, enviar um ACK, mandar para layer 5 e
+     * mudar seqnum do receptor para o próximo pacote
+     */
+    printf("[B_input] Pacote recebido (pkt: %d, payload: %s)\n", packet.seqnum, packet.payload);
+    printf("[B_input] Enviando ACK\n");
+
+    send_ACK(1, B.seqnum);
+    tolayer5(1, packet.payload);
+    B.seqnum = 1 - B.seqnum;
 }
 
+/**
+ * Na inplementação unidirecional o B não tem um timer, então não será utilizado
+ */
 void B_timerinterrupt() {
-
+    printf("[B_timerinterrupt] Pulando\n");
 }
 
 /**
@@ -176,6 +282,7 @@ int main() {
     struct pkt  pkt2give;
 
     int i,j;
+    char c;
 
     init();
     A_init();
