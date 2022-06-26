@@ -99,42 +99,90 @@ void send_NAK(int AorB, int seqnum) {
 }
 
 /**
- * Desliza a o buffer para a esquerda, quando receber um ACK
+ * Desliza a o buffer, removendo pacotes que já receberam ACK
  * 
- * 1. Descobre qual é a posição do pacote que recebeu ACK
- * 2. Desliza o buffer para esquerda até o pacote que recebeu ACK
- * 3. Preenche com packets vazios as posições finais, indicando posição livre
+ * 1. Descobre a posição do pacote com seqnum igual ao acknum
+ * 2. Identifica se mais de um pacote precisa ser removido
+ * 3. Remove todos e move as posições do buffer
+ * 4. Preenche as posições novas com pacotes zerados (indicando vazio)
  */
-void slide(int acknum) {
-
-}
-
-void slide_window(int acknum) {
-    int acked_index = -1;
+void update_buffer_on_ack(int acknum) {
+    int pkt_index = -1;
 
     for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
         if (A.pkt_buffer[i].seqnum == acknum) {
-            acked_index = i;
+            pkt_index = i;
             break;
         }
     }
 
-    if (acked_index == -1) {
-        printf("o ack é de um pacote que não está mais no buffer");
+    if (pkt_index == -1) {
+        printf("[update_buffer_on_ack] O buffer não contém o pacote informado, pulando\n");
         return;
-    }
+    } else if (pkt_index == 0) {
+        printf("[update_buffer_on_ack] Ack no primeiro elemento (pkt: %d)", A.pkt_buffer[pkt_index].seqnum);
 
-    for (int i = acked_index + 1; i < SENDER_BUFFER_SIZE; i++) {
-        A.pkt_buffer[i - acked_index + 1] = A.pkt_buffer[i];
-    }
+        printf("[update_buffer_on_ack] Buffer (current size: %d, capacity: %d)\n", A.pkt_buffer_current_size, SENDER_BUFFER_SIZE);
+        for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
+            printf(" %d |", A.pkt_buffer[i].seqnum);
+        }
+        printf("\n");
 
-    for (int i = SENDER_BUFFER_SIZE - 1; i >= SENDER_BUFFER_SIZE - (acked_index + 1); i--) {
+        for (int i = 0; i < SENDER_BUFFER_SIZE - 1; i++) {
+            A.pkt_buffer[i] = A.pkt_buffer[i + 1];
+        }
+
         struct pkt packet;
         packet.seqnum = 0;
-        A.pkt_buffer[i] = packet;
+        A.pkt_buffer[SENDER_BUFFER_SIZE - 1] = packet;
+
+        A.pkt_buffer_current_size--;
+
+        printf("[update_buffer_on_ack] Buffer atualizado (current size: %d, capacity: %d)\n", A.pkt_buffer_current_size, SENDER_BUFFER_SIZE);
+        for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
+            printf(" %d |", A.pkt_buffer[i].seqnum);
+        }
+        printf("\n");
+
+        return;
+    } else {
+        printf("[update_buffer_on_ack] Buffer (current size: %d, capacity: %d)\n", A.pkt_buffer_current_size, SENDER_BUFFER_SIZE);
+        for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
+            printf(" %d |", A.pkt_buffer[i].seqnum);
+        }
+        printf("\n");
+
+        for (int i = 0; i < pkt_index + 1; i++) {
+            for (int i = 0; i < SENDER_BUFFER_SIZE - 1; i++) {
+                A.pkt_buffer[i] = A.pkt_buffer[i + 1];
+            }
+
+            struct pkt packet;
+            packet.seqnum = 0;
+            A.pkt_buffer[SENDER_BUFFER_SIZE - 1] = packet;
+
+            A.pkt_buffer_current_size--;
+        }
+
+        printf("[update_buffer_on_ack] Buffer atualizado (current size: %d, capacity: %d)\n", A.pkt_buffer_current_size, SENDER_BUFFER_SIZE);
+        for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
+            printf(" %d |", A.pkt_buffer[i].seqnum);
+        }
+        printf("\n");
     }
 
-    A.pkt_buffer_current_size -= acked_index + 1;
+
+    // for (int i = acked_index + 1; i < SENDER_BUFFER_SIZE; i++) {
+    //     A.pkt_buffer[i - acked_index + 1] = A.pkt_buffer[i];
+    // }
+
+    // for (int i = SENDER_BUFFER_SIZE - 1; i >= SENDER_BUFFER_SIZE - (acked_index + 1); i--) {
+    //     struct pkt packet;
+    //     packet.seqnum = 0;
+    //     A.pkt_buffer[i] = packet;
+    // }
+
+    // A.pkt_buffer_current_size -= acked_index + 1;
 }
 
 /**
