@@ -35,8 +35,7 @@ struct remetente {
     int pkt_window_size;
     int next_seqnum;
     int pkt_buffer_current_size;
-    int pkts_on_medium;
-    struct pkt pkt_buffer[SENDER_BUFFER_SIZE];
+    struct pkt_controller pkt_buffer[SENDER_BUFFER_SIZE];
 } A;
 
 /**
@@ -116,7 +115,7 @@ void update_buffer_on_ack(int acknum) {
     int pkt_index = -1;
 
     for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
-        if (A.pkt_buffer[i].seqnum == acknum) {
+        if (A.pkt_buffer[i].packet.seqnum == acknum) {
             pkt_index = i;
             break;
         }
@@ -127,9 +126,9 @@ void update_buffer_on_ack(int acknum) {
         return;
     } 
 
-    printf("[update_buffer_on_ack] Buffer (current size: %d, capacity: %d, acked_pkt: %d)\n", A.pkt_buffer_current_size, SENDER_BUFFER_SIZE, A.pkt_buffer[pkt_index].seqnum);
+    printf("[update_buffer_on_ack] Buffer (current size: %d, capacity: %d, acked_pkt: %d)\n", A.pkt_buffer_current_size, SENDER_BUFFER_SIZE, A.pkt_buffer[pkt_index].packet.seqnum);
     for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
-        printf(" %d |", A.pkt_buffer[i].seqnum);
+        printf(" %d |", A.pkt_buffer[i].packet.seqnum);
     }
     printf("\n");
 
@@ -140,16 +139,15 @@ void update_buffer_on_ack(int acknum) {
 
         struct pkt packet;
         packet.seqnum = 0;
-        A.pkt_buffer[SENDER_BUFFER_SIZE - 1] = packet;
+        A.pkt_buffer[SENDER_BUFFER_SIZE - 1].packet = packet;
+        A.pkt_buffer[SENDER_BUFFER_SIZE - 1].sent = 0;
 
         A.pkt_buffer_current_size--;
     }
 
-    A.pkts_on_medium -= (pkt_index + 1);
-
     printf("[update_buffer_on_ack] Buffer atualizado (current size: %d, capacity: %d)\n", A.pkt_buffer_current_size, SENDER_BUFFER_SIZE);
     for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
-        printf(" %d |", A.pkt_buffer[i].seqnum);
+        printf(" %d |", A.pkt_buffer[i].packet.seqnum);
     }
     printf("\n");
 }
@@ -163,23 +161,23 @@ void update_buffer_on_ack(int acknum) {
 void send_window() {
     printf("[send_window] Buffer (current size: %d, capacity: %d)\n", A.pkt_buffer_current_size, SENDER_BUFFER_SIZE);
     for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
-        printf(" %d |", A.pkt_buffer[i].seqnum);
+        printf(" %d |", A.pkt_buffer[i].packet.seqnum);
     }
     printf("\n");
 
     printf("[send_window] Window (size: %d)\n", A.pkt_window_size);
     for (int i = 0; i < A.pkt_window_size; i++) {
-        printf(" %d |", A.pkt_buffer[i].seqnum);
+        printf(" %d |", A.pkt_buffer[i].packet.seqnum);
     }
     printf("\n");
 
     int number_of_packets_to_send = A.pkt_buffer_current_size > A.pkt_window_size ? A.pkt_window_size : A.pkt_buffer_current_size;
 
     for (int i = 0; i < number_of_packets_to_send; i++) {
-        printf("[send_window] Sending (pkt: %d, payload: %s)\n", A.pkt_buffer[i].seqnum, A.pkt_buffer[i].payload);
+        printf("[send_window] Sending (pkt: %d, payload: %s)\n", A.pkt_buffer[i].packet.seqnum, A.pkt_buffer[i].packet.payload);
 
-        tolayer3(0, A.pkt_buffer[i]);
-        A.pkts_on_medium++;
+        A.pkt_buffer[i].sent = 1;
+        tolayer3(0, A.pkt_buffer[i].packet);
     }
 }
 
@@ -193,18 +191,19 @@ void add_pkt_to_buffer(struct pkt packet) {
     printf("[add_pkt_to_buffer] Antes (buffer size: %d)\n", A.pkt_buffer_current_size);
 
     for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
-        printf(" %d |", A.pkt_buffer[i].seqnum);
+        printf(" %d |", A.pkt_buffer[i].packet.seqnum);
     }
 
     printf("\n");
 
-    A.pkt_buffer[A.pkt_buffer_current_size] = packet;
+    A.pkt_buffer[A.pkt_buffer_current_size].packet = packet;
+    A.pkt_buffer[A.pkt_buffer_current_size].sent = 0;
     A.pkt_buffer_current_size++;
 
     printf("[add_pkt_to_buffer] Depois (buffer size: %d)\n", A.pkt_buffer_current_size);
 
     for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
-        printf(" %d |", A.pkt_buffer[i].seqnum);
+        printf(" %d |", A.pkt_buffer[i].packet.seqnum);
     }
 
     printf("\n");
@@ -226,7 +225,8 @@ void A_init() {
     for(int i = 0; i < SENDER_BUFFER_SIZE; i++) {
         struct pkt packet;
         packet.seqnum = 0;
-        A.pkt_buffer[i] = packet;
+        A.pkt_buffer[i].packet = packet;
+        A.pkt_buffer[i].sent = 0;
     }
 }
 
@@ -266,17 +266,14 @@ void A_output(struct msg message) {
 
     add_pkt_to_buffer(packet);
 
-    //mandar somente o pacote, e se ele estiver dentro do intervalo
-
     for (int i = 0; i < A.pkt_window_size; i++) {
-        if (A.pkt_buffer[i].seqnum == packet.seqnum) {
-            printf("[A_output] Sending (pkt: %d, payload: %s)\n", A.pkt_buffer[i].seqnum, A.pkt_buffer[i].payload);
-            tolayer3(0, A.pkt_buffer[i]);
-            A.pkts_on_medium++;
+        if (A.pkt_buffer[i].packet.seqnum == packet.seqnum) {
+            printf("[A_output] Sending (pkt: %d, payload: %s)\n", A.pkt_buffer[i].packet.seqnum, A.pkt_buffer[i].packet.payload);
+
+            A.pkt_buffer[i].sent = 1;
+            tolayer3(0, A.pkt_buffer[i].packet);
         }
     }
-
-    // send_window();
 }
 
 /**
@@ -284,7 +281,7 @@ void A_output(struct msg message) {
  * 
  * 1. Se o pacote está corrompido, descarta pacote
  * 2. Se o pacote é um NAK, reenvia janela a partir no pacote não recebido
- * 3. Desliza janela de envio.
+ * 3. Envia os pacotes dentro da janela que ainda não foram enviados
  */
 void A_input(struct pkt packet) {
     if (!is_valid_checksum(packet.checksum, &packet)) {
@@ -308,8 +305,13 @@ void A_input(struct pkt packet) {
     update_buffer_on_ack(packet.acknum);
     //ajustar timer
 
-    if (A.pkts_on_medium == A.pkt_window_size - 1) {
-        send_window();
+    for (int i = 0; i < A.pkt_window_size; i++) {
+        if (A.pkt_buffer[i].packet.seqnum != 0 && A.pkt_buffer[i].sent == 0) {
+            printf("[A_input] Sending (pkt: %d, payload: %s)\n", A.pkt_buffer[i].packet.seqnum, A.pkt_buffer[i].packet.payload);
+
+            A.pkt_buffer[i].sent = 1;
+            tolayer3(0, A.pkt_buffer[i].packet);
+        }
     }
 }
 
