@@ -22,7 +22,7 @@ struct pkt {
 /**
  * Estrutura de controle para o remetente
  */
-struct a {
+struct remetente {
     struct pkt last_packet;
     float rtt;
     int waiting_for_ack;
@@ -32,7 +32,7 @@ struct a {
 /**
  * Estrutura de controle para o destinatário 
  */
-struct b {
+struct receptor {
     int seqnum;
 };
 
@@ -95,8 +95,8 @@ void send_NAK(int AorB, int seqnum) {
     tolayer3(AorB, packet);
 }
 
-struct a A;
-struct b B;
+struct remetente A;
+struct receptor B;
 
 #define RTT 50.0
 
