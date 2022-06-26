@@ -78,6 +78,10 @@ int is_valid_checksum(int expected_checksum, struct pkt *packet) {
     return (checksum == expected_checksum);
 }
 
+int get_next_pkt_number(int current_pkt_number) {
+    return (current_pkt_number + 1) % 2;
+}
+
 /**
  * Envia um pacote para o layer 3 com um ACK
  */
@@ -89,21 +93,19 @@ void send_ACK(int AorB, int seqnum) {
 }
 
 /**
- * Envia um pacote para o layer 3 com um NAK, nesse caso o acknum será
- * um valor negativo para podermos diferenciar
+ * Envia um pacote para o layer 3 com um NAK, nesse caso o acknum será 0 se o seqnum for 1 e vice versa
  */
 void send_NAK(int AorB, int seqnum) {
     struct pkt packet;
-    packet.acknum = 1 - seqnum;
+    packet.acknum = get_next_pkt_number(seqnum);
     update_pkt_checksum(&packet);
     tolayer3(AorB, packet);
 }
 
-
 struct a A;
 struct b B;
 
-#define RTT 15.0
+#define RTT 50.0
 
 
 void A_output(struct msg message) {
@@ -159,7 +161,7 @@ void A_input(struct pkt packet) {
 
     stoptimer(0);
 
-    A.seqnum = 1 - A.seqnum;
+    A.seqnum = get_next_pkt_number(A.seqnum);
     A.waiting_for_ack = 0;
 }
 
@@ -218,7 +220,7 @@ void B_input(struct pkt packet) {
 
     send_ACK(1, B.seqnum);
     tolayer5(1, packet.payload);
-    B.seqnum = 1 - B.seqnum;
+    B.seqnum = get_next_pkt_number(B.seqnum);
 }
 
 /**
