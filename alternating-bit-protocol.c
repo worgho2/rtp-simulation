@@ -173,7 +173,7 @@ void A_timerinterrupt() {
         return;
     }
 
-    printf("[A_timerinterrupt] Timeout, reenviado (pkt: %d, payload: %s)\n", A.last_packet.seqnum, A.last_packet.payload);
+    printf("[A_timerinterrupt] Timeout. Reenviando (pkt: %d, payload: %s)\n", A.last_packet.seqnum, A.last_packet.payload);
 
     tolayer3(0, A.last_packet);
     starttimer(0, A.rtt);
@@ -383,7 +383,7 @@ int main() {
     }
 
     terminate:
-        printf(" Simulator terminated at time %f\n after sending %d msgs from layer5\n",time,nsim);
+        printf("\nSimulator terminated at time %f after sending %d msgs from layer5\n", time, nsim);
 }
 
 /***********************************************/
