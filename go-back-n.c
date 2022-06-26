@@ -138,11 +138,10 @@ void slide_window(int acknum) {
 }
 
 /**
- * Envia a janela para o meio a partir do pacote informado
+ * Envia a janela para o meio
  * 
- * 1. Descobre qual é a posição do pacote inicial requisitado
- * 2. Atualiza a janela caso não seja o primeiro
- * 3. Envia a janela para o meio
+ * 1. Calcula quais pacotes serão enviados, sem exceder a janela
+ * 2. Envia os pacotes 1 a 1
  */
 void send_window() {
     printf("[send_window] Buffer (current size: %d, capacity: %d)\n", A.pkt_buffer_current_size, SENDER_BUFFER_SIZE);
@@ -157,61 +156,11 @@ void send_window() {
     }
     printf("\n");
 
+    int number_of_packets_to_send = A.pkt_buffer_current_size > A.pkt_window_size ? A.pkt_window_size : A.pkt_buffer_current_size;
 
-    int first_of_window_index = -1;
+    for (int i = 0; i < number_of_packets_to_send; i++) {
+        printf("[send_window] Sending (pkt: %d, payload: %s)\n", A.pkt_buffer[i].seqnum, A.pkt_buffer[i].payload);
 
-    for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
-        if (A.pkt_buffer[i].seqnum == seqnum) {
-            first_of_window_index = i;
-            break;
-        }
-    }
-
-    printf("[send_window] Index %d (pkt: %d)\n", first_of_window_index, A.pkt_buffer[first_of_window_index].seqnum);
-
-    if (first_of_window_index == -1) {
-        printf("requisitando um pacote que não está na janela, erro no código");
-        exit(1);
-        return;
-    }
-
-    printf("[send_window] Deslizando janela ANTES (buffer size %d)\n", A.pkt_buffer_current_size);
-
-    for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
-        printf(" %d |", A.pkt_buffer[i].seqnum);
-    }
-
-    printf("\n");
-
-    for (int i = first_of_window_index; i < SENDER_BUFFER_SIZE; i++) {
-        A.pkt_buffer[i - first_of_window_index] = A.pkt_buffer[i];
-    }
-
-    printf("[send_window] Durante\n");
-
-    for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
-        printf(" %d |", A.pkt_buffer[i].seqnum);
-    }
-
-    printf("\n");
-
-    for (int i = SENDER_BUFFER_SIZE - 1; i >= SENDER_BUFFER_SIZE - first_of_window_index; i--) {
-        struct pkt packet;
-        packet.seqnum = 0;
-        A.pkt_buffer[i] = packet;
-    }
-
-    A.pkt_buffer_current_size -= first_of_window_index;
-
-    printf("[send_window] Depois (buffer size %d)\n", A.pkt_buffer_current_size);
-
-    for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
-        printf(" %d |", A.pkt_buffer[i].seqnum);
-    }
-
-    printf("\n");
-
-    for (int i = 0; i < A.pkt_buffer_current_size; i++) { //adicionar a janela como máximo
         tolayer3(0, A.pkt_buffer[i]);
     }
 }
@@ -298,7 +247,9 @@ void A_output(struct msg message) {
     A.next_seqnum++;
 
     add_pkt_to_buffer(packet);
-    send_window(A.pkt_buffer[0].seqnum);
+
+    send_window();
+    // send_window(A.pkt_buffer[0].seqnum);
 }
 
 /**
@@ -319,7 +270,8 @@ void A_input(struct pkt packet) {
 
         printf("[A_input] NAK recebido, reenviando janela (pkt: %d)\n", first_window_pkt_seqnum);
 
-        send_window(first_window_pkt_seqnum);
+        // send_window(first_window_pkt_seqnum);
+        send_window();
         //reiniciar timer
         return;
     }
