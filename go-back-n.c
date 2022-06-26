@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #define BIDIRECTIONAL 0
 
@@ -20,24 +19,26 @@ struct pkt {
 /***********************************************/
 
 #define RTT                 50.0
-#define WINDOW_SIZE         8
+#define SENDER_WINDOW_SIZE  8
 #define SENDER_BUFFER_SIZE  50
 
 /**
- * Estrutura de controle para o remetente
+ * 
  */
 struct remetente {
     float rtt;
-    struct pkt packet_buffer[SENDER_BUFFER_SIZE];
-    int seqnum;
-};
+    int pkt_window_size;
+    int next_seqnum;
+    int pkt_buffer_current_size;
+    struct pkt pkt_buffer[SENDER_BUFFER_SIZE + 10];
+} A;
 
 /**
- * Estrutura de controle para o destinatário 
+ * @expected_seqnum: Número de sequência do pacote esperado
  */
 struct receptor {
     int expected_seqnum;
-};
+} B;
 
 /**
  * Definição das funções que o código vai usar para evitar warning na compilação
@@ -81,6 +82,7 @@ void send_ACK(int AorB, int seqnum) {
     packet.acknum = seqnum;
     update_pkt_checksum(&packet);
 
+    printf("[send_ACK] Enviando (acknum: %d)\n", seqnum);
     tolayer3(AorB, packet);
 }
 
@@ -89,50 +91,251 @@ void send_ACK(int AorB, int seqnum) {
  */
 void send_NAK(int AorB, int seqnum) {
     struct pkt packet;
-    packet.acknum = -seqnum;
+    packet.acknum = - seqnum;
     update_pkt_checksum(&packet);
 
+    printf("[send_NAK] Enviando (acknum: %d)\n", packet.acknum);
     tolayer3(AorB, packet);
 }
 
-
-struct remetente A;
-
-void A_output(struct msg message) {
+/**
+ * Desliza a o buffer para a esquerda, quando receber um ACK
+ * 
+ * 1. Descobre qual é a posição do pacote que recebeu ACK
+ * 2. Desliza o buffer para esquerda até o pacote que recebeu ACK
+ * 3. Preenche com packets vazios as posições finais, indicando posição livre
+ */
+void slide(int acknum) {
 
 }
 
+void slide_window(int acknum) {
+    int acked_index = -1;
 
+    for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
+        if (A.pkt_buffer[i].seqnum == acknum) {
+            acked_index = i;
+            break;
+        }
+    }
 
+    if (acked_index == -1) {
+        printf("o ack é de um pacote que não está mais no buffer");
+        return;
+    }
 
-void A_input(struct pkt packet) {
+    for (int i = acked_index + 1; i < SENDER_BUFFER_SIZE; i++) {
+        A.pkt_buffer[i - acked_index + 1] = A.pkt_buffer[i];
+    }
 
+    for (int i = SENDER_BUFFER_SIZE - 1; i >= SENDER_BUFFER_SIZE - (acked_index + 1); i--) {
+        struct pkt packet;
+        packet.seqnum = 0;
+        A.pkt_buffer[i] = packet;
+    }
+
+    A.pkt_buffer_current_size -= acked_index + 1;
 }
 
 /**
- * Executa quando o timer inicializado no envio de um pacote é estourado,
- * então o último pacote é re-enviado.
+ * Envia a janela para o meio a partir do pacote informado
+ * 
+ * 1. Descobre qual é a posição do pacote inicial requisitado
+ * 2. Atualiza a janela caso não seja o primeiro
+ * 3. Envia a janela para o meio
+ */
+void send_window() {
+    printf("[send_window] Buffer (current size: %d, capacity: %d)\n", A.pkt_buffer_current_size, SENDER_BUFFER_SIZE);
+    for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
+        printf(" %d |", A.pkt_buffer[i].seqnum);
+    }
+    printf("\n");
+
+    printf("[send_window] Window (size: %d)\n", A.pkt_window_size);
+    for (int i = 0; i < A.pkt_window_size; i++) {
+        printf(" %d |", A.pkt_buffer[i].seqnum);
+    }
+    printf("\n");
+
+
+    int first_of_window_index = -1;
+
+    for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
+        if (A.pkt_buffer[i].seqnum == seqnum) {
+            first_of_window_index = i;
+            break;
+        }
+    }
+
+    printf("[send_window] Index %d (pkt: %d)\n", first_of_window_index, A.pkt_buffer[first_of_window_index].seqnum);
+
+    if (first_of_window_index == -1) {
+        printf("requisitando um pacote que não está na janela, erro no código");
+        exit(1);
+        return;
+    }
+
+    printf("[send_window] Deslizando janela ANTES (buffer size %d)\n", A.pkt_buffer_current_size);
+
+    for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
+        printf(" %d |", A.pkt_buffer[i].seqnum);
+    }
+
+    printf("\n");
+
+    for (int i = first_of_window_index; i < SENDER_BUFFER_SIZE; i++) {
+        A.pkt_buffer[i - first_of_window_index] = A.pkt_buffer[i];
+    }
+
+    printf("[send_window] Durante\n");
+
+    for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
+        printf(" %d |", A.pkt_buffer[i].seqnum);
+    }
+
+    printf("\n");
+
+    for (int i = SENDER_BUFFER_SIZE - 1; i >= SENDER_BUFFER_SIZE - first_of_window_index; i--) {
+        struct pkt packet;
+        packet.seqnum = 0;
+        A.pkt_buffer[i] = packet;
+    }
+
+    A.pkt_buffer_current_size -= first_of_window_index;
+
+    printf("[send_window] Depois (buffer size %d)\n", A.pkt_buffer_current_size);
+
+    for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
+        printf(" %d |", A.pkt_buffer[i].seqnum);
+    }
+
+    printf("\n");
+
+    for (int i = 0; i < A.pkt_buffer_current_size; i++) { //adicionar a janela como máximo
+        tolayer3(0, A.pkt_buffer[i]);
+    }
+}
+
+/**
+ * Adiciona um novo pacote no buffer
+ * 
+ * 1. Adiciona o pacote na posição correta
+ * 2. Incrementa a variável de tamanho do buffer
+ */
+void add_pkt_to_buffer(struct pkt packet) {
+    printf("[add_pkt_to_buffer] Antes (buffer size: %d)\n", A.pkt_buffer_current_size);
+
+    for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
+        printf(" %d |", A.pkt_buffer[i].seqnum);
+    }
+
+    printf("\n");
+
+    A.pkt_buffer[A.pkt_buffer_current_size] = packet;
+    A.pkt_buffer_current_size++;
+
+    printf("[add_pkt_to_buffer] Depois (buffer size: %d)\n", A.pkt_buffer_current_size);
+
+    for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
+        printf(" %d |", A.pkt_buffer[i].seqnum);
+    }
+
+    printf("\n");
+}
+
+/***********************************************/
+/*                  REMETENTE                  */
+/***********************************************/
+
+/**
+ * Inicializa remetente
+ */
+void A_init() {
+    A.rtt = RTT;
+    A.pkt_window_size = SENDER_WINDOW_SIZE;
+    A.next_seqnum = 1;
+    A.pkt_buffer_current_size = 0;
+
+    for(int i = 0; i < SENDER_BUFFER_SIZE; i++) {
+        struct pkt packet;
+        packet.seqnum = 0;
+        A.pkt_buffer[i] = packet;
+    }
+}
+
+/**
+ * Chamado quando o timer do remetente é estourado
+ * 
  */
 void A_timerinterrupt() {
 
 }
 
 /**
- * Inicializa o remetente
+ * Recebe mensagem da camada aplicação
+ * 
+ * 1. Se o buffer já estiver cheio, descarta o pacote
+ * 2. Adiciona o pacote no buffer
+ * 3. Envia a janela para o meio
  */
-void A_init() {
+void A_output(struct msg message) {
+    if (A.pkt_buffer_current_size >= SENDER_BUFFER_SIZE) {
+        printf("[A_output] Buffer cheio, descartando pacote\n");
+        return;
+    }
 
+    printf("[A_output] Mensagem recebida, adicionando pacote ao buffer (pkt: %d, payload: %s)\n", A.next_seqnum, message.data);
+
+    struct pkt packet;
+    packet.seqnum = A.next_seqnum;
+    
+    for (int i = 0; i < 20; i++) {
+        packet.payload[i] = message.data[i];
+    }
+
+    update_pkt_checksum(&packet);
+
+    A.next_seqnum++;
+
+    add_pkt_to_buffer(packet);
+    send_window(A.pkt_buffer[0].seqnum);
+}
+
+/**
+ * Recebe pacote do meio
+ * 
+ * 1. Se o pacote está corrompido, descarta pacote
+ * 2. Se o pacote é um NAK, reenvia janela a partir no pacote não recebido
+ * 3. Desliza janela de envio.
+ */
+void A_input(struct pkt packet) {
+    if (!is_valid_checksum(packet.checksum, &packet)) {
+        printf("[A_input] Pacote recebido corrompido, descartando\n");
+        return;
+    }
+
+    if (packet.acknum < 0) {
+        int first_window_pkt_seqnum = abs(packet.acknum);
+
+        printf("[A_input] NAK recebido, reenviando janela (pkt: %d)\n", first_window_pkt_seqnum);
+
+        send_window(first_window_pkt_seqnum);
+        //reiniciar timer
+        return;
+    }
+
+    printf("[A_input] ACK recebido, deslizando janela (pkt: %d)\n", packet.acknum);
+
+    slide_window(packet.acknum);
+    //ajustar timer
 }
 
 /***********************************************/
 /*                   RECEPTOR                  */
 /***********************************************/
 
-struct receptor B;
-
 /**
- * Inicializa destinatário
- * expected_seqnum: Número de sequência do pacote esperado
+ * Inicializa receptor
  */
 void B_init() {
     B.expected_seqnum = 1;
@@ -147,10 +350,18 @@ void B_timerinterrupt() {
 }
 
 /**
+ * Recebe mensagem da camada aplicação
+ * (Não utilizado)
+ */
+void B_output(struct msg message) {
+    printf("[B_output] Não implementado\n");
+}
+
+/**
  * Recebe pacote do meio
  * 
- * 1. Verifica integridade do pacote
- * 2. Verifica se o pacote é o esperado
+ * 1. Se o pacote está corrompido, manda NAK
+ * 2. Se o pacote não é o esperado, manda NAK
  * 3. Manda mensagem para a camada de aplicação
  * 4. Manda ACK para o meio
  */
@@ -168,22 +379,13 @@ void B_input(struct pkt packet) {
     }
 
     printf("[B_input] Pacote recebido com sucesso (pkt: %d, payload: %s)\n", packet.seqnum, packet.payload);
+
     tolayer5(1, packet.payload);
-
-    printf("[B_input] Mandando ACK (pkt: %d)\n", packet.seqnum);
     send_ACK(1, packet.seqnum);
-
     B.expected_seqnum++;
-}
 
-/**
- * Recebe mensagem da camada aplicação
- * (Não utilizado)
- */
-void B_output(struct msg message) {
-    printf("[B_output] Não implementado\n");
+    printf("[B_input] Aguardando próximo pacote (pkt: %d)\n", B.expected_seqnum);
 }
-
 
 /***********************************************/
 /*     NETWORK EMULATION CODE STARTS BELOW      */
