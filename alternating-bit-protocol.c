@@ -320,21 +320,19 @@ int main() {
 
         /* update time to next event time */
         time = eventptr->evtime;
-
-        /* all done with simulation */
-        if (nsim == nsimmax) {
-            break;                        
-        }
 	  
-        if (eventptr->evtype == FROM_LAYER5) {
+        if (eventptr->evtype == FROM_LAYER5 && nsim < nsimmax) {
             /* set up future arrival */
-            generate_next_arrival();
+            if (nsim + 1 < nsimmax) {
+                generate_next_arrival();
+            }
 
             /* fill in msg to give with string of same letter */
             j = nsim % 26;
             for (i = 0; i < 20; i++) {
                 msg2give.data[i] = 97 + j;
             }
+            msg2give.data[19] = 0;
                
             if (TRACE > 2) {
                 printf("          MAINLOOP: data given to student: ");
@@ -600,7 +598,7 @@ void starttimer(int AorB, float increment) {
 
 void tolayer3(int AorB, struct pkt packet) {
     struct pkt *mypktptr;
-    struct event *evptr,*q;
+    struct event *evptr, *q;
     float lastime, x, jimsrand();
     int i;
 
