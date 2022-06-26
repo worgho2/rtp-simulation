@@ -119,17 +119,17 @@ void update_buffer_on_ack(int acknum) {
     if (pkt_index == -1) {
         printf("[update_buffer_on_ack] O buffer não contém o pacote informado, pulando\n");
         return;
-    } else if (pkt_index == 0) {
-        printf("[update_buffer_on_ack] Ack no primeiro elemento (pkt: %d)", A.pkt_buffer[pkt_index].seqnum);
+    } 
 
-        printf("[update_buffer_on_ack] Buffer (current size: %d, capacity: %d)\n", A.pkt_buffer_current_size, SENDER_BUFFER_SIZE);
-        for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
-            printf(" %d |", A.pkt_buffer[i].seqnum);
-        }
-        printf("\n");
+    printf("[update_buffer_on_ack] Buffer (current size: %d, capacity: %d, acked_pkt: %d)\n", A.pkt_buffer_current_size, SENDER_BUFFER_SIZE, A.pkt_buffer[pkt_index].seqnum);
+    for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
+        printf(" %d |", A.pkt_buffer[i].seqnum);
+    }
+    printf("\n");
 
-        for (int i = 0; i < SENDER_BUFFER_SIZE - 1; i++) {
-            A.pkt_buffer[i] = A.pkt_buffer[i + 1];
+    for (int i = 0; i < pkt_index + 1; i++) {
+        for (int j = 0; j < SENDER_BUFFER_SIZE - 1; j++) {
+            A.pkt_buffer[j] = A.pkt_buffer[j + 1];
         }
 
         struct pkt packet;
@@ -137,52 +137,13 @@ void update_buffer_on_ack(int acknum) {
         A.pkt_buffer[SENDER_BUFFER_SIZE - 1] = packet;
 
         A.pkt_buffer_current_size--;
-
-        printf("[update_buffer_on_ack] Buffer atualizado (current size: %d, capacity: %d)\n", A.pkt_buffer_current_size, SENDER_BUFFER_SIZE);
-        for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
-            printf(" %d |", A.pkt_buffer[i].seqnum);
-        }
-        printf("\n");
-
-        return;
-    } else {
-        printf("[update_buffer_on_ack] Buffer (current size: %d, capacity: %d)\n", A.pkt_buffer_current_size, SENDER_BUFFER_SIZE);
-        for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
-            printf(" %d |", A.pkt_buffer[i].seqnum);
-        }
-        printf("\n");
-
-        for (int i = 0; i < pkt_index + 1; i++) {
-            for (int i = 0; i < SENDER_BUFFER_SIZE - 1; i++) {
-                A.pkt_buffer[i] = A.pkt_buffer[i + 1];
-            }
-
-            struct pkt packet;
-            packet.seqnum = 0;
-            A.pkt_buffer[SENDER_BUFFER_SIZE - 1] = packet;
-
-            A.pkt_buffer_current_size--;
-        }
-
-        printf("[update_buffer_on_ack] Buffer atualizado (current size: %d, capacity: %d)\n", A.pkt_buffer_current_size, SENDER_BUFFER_SIZE);
-        for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
-            printf(" %d |", A.pkt_buffer[i].seqnum);
-        }
-        printf("\n");
     }
 
-
-    // for (int i = acked_index + 1; i < SENDER_BUFFER_SIZE; i++) {
-    //     A.pkt_buffer[i - acked_index + 1] = A.pkt_buffer[i];
-    // }
-
-    // for (int i = SENDER_BUFFER_SIZE - 1; i >= SENDER_BUFFER_SIZE - (acked_index + 1); i--) {
-    //     struct pkt packet;
-    //     packet.seqnum = 0;
-    //     A.pkt_buffer[i] = packet;
-    // }
-
-    // A.pkt_buffer_current_size -= acked_index + 1;
+    printf("[update_buffer_on_ack] Buffer atualizado (current size: %d, capacity: %d)\n", A.pkt_buffer_current_size, SENDER_BUFFER_SIZE);
+    for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
+        printf(" %d |", A.pkt_buffer[i].seqnum);
+    }
+    printf("\n");
 }
 
 /**
@@ -297,7 +258,6 @@ void A_output(struct msg message) {
     add_pkt_to_buffer(packet);
 
     send_window();
-    // send_window(A.pkt_buffer[0].seqnum);
 }
 
 /**
@@ -314,11 +274,11 @@ void A_input(struct pkt packet) {
     }
 
     if (packet.acknum < 0) {
-        int first_window_pkt_seqnum = abs(packet.acknum);
+        int nak_pkt = abs(packet.acknum);
 
-        printf("[A_input] NAK recebido, reenviando janela (pkt: %d)\n", first_window_pkt_seqnum);
+        printf("[A_input] NAK recebido, reenviando janela (pkt: %d)\n", nak_pkt);
 
-        // send_window(first_window_pkt_seqnum);
+        update_buffer_on_ack(nak_pkt - 1);
         send_window();
         //reiniciar timer
         return;
@@ -326,7 +286,7 @@ void A_input(struct pkt packet) {
 
     printf("[A_input] ACK recebido, deslizando janela (pkt: %d)\n", packet.acknum);
 
-    slide_window(packet.acknum);
+    update_buffer_on_ack(packet.acknum);
     //ajustar timer
 }
 
