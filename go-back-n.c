@@ -20,7 +20,12 @@ struct pkt {
 
 #define RTT                 50.0
 #define SENDER_WINDOW_SIZE  8
-#define SENDER_BUFFER_SIZE  50
+#define SENDER_BUFFER_SIZE  25
+
+struct pkt_controller {
+    struct pkt packet;
+    int sent;
+};
 
 /**
  * 
@@ -30,7 +35,8 @@ struct remetente {
     int pkt_window_size;
     int next_seqnum;
     int pkt_buffer_current_size;
-    struct pkt pkt_buffer[SENDER_BUFFER_SIZE + 10];
+    int pkts_on_medium;
+    struct pkt pkt_buffer[SENDER_BUFFER_SIZE];
 } A;
 
 /**
@@ -139,6 +145,8 @@ void update_buffer_on_ack(int acknum) {
         A.pkt_buffer_current_size--;
     }
 
+    A.pkts_on_medium -= (pkt_index + 1);
+
     printf("[update_buffer_on_ack] Buffer atualizado (current size: %d, capacity: %d)\n", A.pkt_buffer_current_size, SENDER_BUFFER_SIZE);
     for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
         printf(" %d |", A.pkt_buffer[i].seqnum);
@@ -171,6 +179,7 @@ void send_window() {
         printf("[send_window] Sending (pkt: %d, payload: %s)\n", A.pkt_buffer[i].seqnum, A.pkt_buffer[i].payload);
 
         tolayer3(0, A.pkt_buffer[i]);
+        A.pkts_on_medium++;
     }
 }
 
@@ -234,7 +243,7 @@ void A_timerinterrupt() {
  * 
  * 1. Se o buffer já estiver cheio, descarta o pacote
  * 2. Adiciona o pacote no buffer
- * 3. Envia a janela para o meio
+ * 3. Envia o pacote, se ele estiver dentro da janela
  */
 void A_output(struct msg message) {
     if (A.pkt_buffer_current_size >= SENDER_BUFFER_SIZE) {
@@ -257,7 +266,17 @@ void A_output(struct msg message) {
 
     add_pkt_to_buffer(packet);
 
-    send_window();
+    //mandar somente o pacote, e se ele estiver dentro do intervalo
+
+    for (int i = 0; i < A.pkt_window_size; i++) {
+        if (A.pkt_buffer[i].seqnum == packet.seqnum) {
+            printf("[A_output] Sending (pkt: %d, payload: %s)\n", A.pkt_buffer[i].seqnum, A.pkt_buffer[i].payload);
+            tolayer3(0, A.pkt_buffer[i]);
+            A.pkts_on_medium++;
+        }
+    }
+
+    // send_window();
 }
 
 /**
@@ -288,6 +307,10 @@ void A_input(struct pkt packet) {
 
     update_buffer_on_ack(packet.acknum);
     //ajustar timer
+
+    if (A.pkts_on_medium == A.pkt_window_size - 1) {
+        send_window();
+    }
 }
 
 /***********************************************/
