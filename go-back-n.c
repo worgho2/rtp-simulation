@@ -22,13 +22,26 @@ struct pkt {
 #define SENDER_WINDOW_SIZE  8
 #define SENDER_BUFFER_SIZE  25
 
+/**
+ * Estrutura útil para saber se o pacote já foi enviado para o meio
+ * 
+ * @packet: estrutura do pacote
+ * @sent: 1 se já foi enviado; 0 se ainda não foi;
+ */
 struct pkt_controller {
     struct pkt packet;
     int sent;
+    int should_retry_on_timeout;
 };
 
 /**
+ * Estrutura do remetente
  * 
+ * @rtt: Delay de transmissão, estático nessa simulação
+ * @pkt_window_size: Tamanho da janela, estático nessa simulação
+ * @next_seqnum: Contador para controlar o seqnum do próximo pacote adicionado no buffer
+ * @pkt_buffer_current_size: Contador para controlar o número de pacotes no buffer
+ * @pkt_buffer: Vetor de pkt_controller, que armazena o pacote e se ele já foi enviado
  */
 struct remetente {
     float rtt;
@@ -39,6 +52,8 @@ struct remetente {
 } A;
 
 /**
+ * Estrutura do receptor
+ * 
  * @expected_seqnum: Número de sequência do pacote esperado
  */
 struct receptor {
@@ -173,11 +188,18 @@ void send_window() {
 
     int number_of_packets_to_send = A.pkt_buffer_current_size > A.pkt_window_size ? A.pkt_window_size : A.pkt_buffer_current_size;
 
+    int timer_multiplier = 0;
     for (int i = 0; i < number_of_packets_to_send; i++) {
         printf("[send_window] Sending (pkt: %d, payload: %s)\n", A.pkt_buffer[i].packet.seqnum, A.pkt_buffer[i].packet.payload);
 
         A.pkt_buffer[i].sent = 1;
         tolayer3(0, A.pkt_buffer[i].packet);
+        timer_multiplier++;
+    }
+
+    if (timer_multiplier > 0) {
+        stoptimer(0);
+        starttimer(0, A.rtt + (timer_multiplier * A.rtt / 3.0));
     }
 }
 
@@ -235,7 +257,8 @@ void A_init() {
  * 
  */
 void A_timerinterrupt() {
-
+    printf("[A_timerinterrupt] Timeout, enviando janela\n");
+    send_window();
 }
 
 /**
@@ -244,6 +267,7 @@ void A_timerinterrupt() {
  * 1. Se o buffer já estiver cheio, descarta o pacote
  * 2. Adiciona o pacote no buffer
  * 3. Envia o pacote, se ele estiver dentro da janela
+ * 4. Se o pacote for enviado, inicia o timer.
  */
 void A_output(struct msg message) {
     if (A.pkt_buffer_current_size >= SENDER_BUFFER_SIZE) {
@@ -272,6 +296,8 @@ void A_output(struct msg message) {
 
             A.pkt_buffer[i].sent = 1;
             tolayer3(0, A.pkt_buffer[i].packet);
+
+            starttimer(0, A.rtt);
         }
     }
 }
@@ -296,22 +322,29 @@ void A_input(struct pkt packet) {
 
         update_buffer_on_ack(nak_pkt - 1);
         send_window();
-        //reiniciar timer
+
         return;
     }
 
     printf("[A_input] ACK recebido, deslizando janela (pkt: %d)\n", packet.acknum);
 
     update_buffer_on_ack(packet.acknum);
-    //ajustar timer
 
+    int timer_multiplier = 0;
     for (int i = 0; i < A.pkt_window_size; i++) {
         if (A.pkt_buffer[i].packet.seqnum != 0 && A.pkt_buffer[i].sent == 0) {
             printf("[A_input] Sending (pkt: %d, payload: %s)\n", A.pkt_buffer[i].packet.seqnum, A.pkt_buffer[i].packet.payload);
 
             A.pkt_buffer[i].sent = 1;
             tolayer3(0, A.pkt_buffer[i].packet);
+            timer_multiplier++;
         }
+    }
+
+    stoptimer(0);
+    
+    if (timer_multiplier > 0) {
+        starttimer(0, A.rtt + (timer_multiplier * A.rtt / 3.0));
     }
 }
 
