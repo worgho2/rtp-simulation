@@ -31,7 +31,6 @@ struct pkt {
 struct pkt_controller {
     struct pkt packet;
     int sent;
-    int should_retry_on_timeout;
 };
 
 /**
