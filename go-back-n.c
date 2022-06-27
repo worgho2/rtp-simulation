@@ -127,6 +127,12 @@ void send_NAK(int AorB, int seqnum) {
  * 4. Preenche as posições novas com pacotes zerados (indicando vazio)
  */
 void update_buffer_on_ack(int acknum) {
+
+    if (acknum == 0) {
+        printf("[update_buffer_on_ack] Primeiro pacote falhou, pulando\n");
+        return;
+    }
+
     int pkt_index = -1;
 
     for (int i = 0; i < SENDER_BUFFER_SIZE; i++) {
@@ -342,7 +348,7 @@ void A_input(struct pkt packet) {
     }
 
     stoptimer(0);
-    
+
     if (timer_multiplier > 0) {
         starttimer(0, A.rtt + (timer_multiplier * A.rtt / 3.0));
     }
